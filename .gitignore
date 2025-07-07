@@ -24,4 +24,5 @@ env/
 
 # Project specific
 csv_port/
+backtest/
 *.csv

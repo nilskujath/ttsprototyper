@@ -5,7 +5,7 @@ This package provides the means to chart each round-trip trade from a backtest, 
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
-[![Development Status](https://img.shields.io/badge/status-pre--alpha-red.svg)](https://pypi.org/project/aroleid-simple-strategy-prototyper/)
+[![Development Status](https://img.shields.io/badge/status-pre--alpha-red.svg)](https://pypi.org/project/ttsprototyper/)
 
 ---
 
@@ -63,7 +63,7 @@ os.chdir('/content/drive/MyDrive/trading_analysis')  # Adjust path as needed
 
 ```bash
 git clone https://github.com/nilskujath/ttsprototyper.git
-cd aroleid_simple_strategy_prototyper
+cd ttsprototyper
 poetry install
 ```
 
@@ -71,11 +71,11 @@ poetry install
 
 ### Architecture
 
-The package is built around a single abstract base class `TTSPrototyper` that encapsulates the entire backtesting workflow. Users implement custom strategies by subclassing `TTSPrototyper` and defining two required methods:
+The package is built around a single abstract base class `TTSPrototyper` that encapsulates the entire backtesting workflow. Users implement custom strategies by subclassing `TTSPrototyper` and defining three required methods:
 
-* `calculate_indicators(self) -> pd.DataFrame`: Calculate any technical indicators you want to use in your strategy. 
+* `calculate_indicators(self) -> pd.DataFrame`: Calculate any technical indicators you want to use in your strategy.
 * `generate_signals(self) -> pd.DataFrame`: Define your trading signals based on these indicators.
-* `apply_strategy_rules(self) -> pd.DataFrame`: Implement your trading logic based on these signals here.
+* `apply_strategy_rules(self, row)`: Implement your trading logic based on these signals for each bar.
 
 Note: From the perspective of the backtester, there is no functional difference between a (complex) indicator and a signal. However, we conceptually separate indicators and signals to enforce different naming conventions that will later be used in charting your trades.
 
@@ -151,7 +151,7 @@ class MyTTSPrototyper(ttsp.TTSPrototyper):
     def generate_signals(self) -> pd.DataFrame:
         pass
 
-    def apply_strategy_rules(self) -> pd.DataFrame:
+    def apply_strategy_rules(self, row):
         pass
 
 
@@ -192,7 +192,7 @@ After initializing the subclassed `TTSPrototyper`, you must specify the contract
 
 def main():
     prototyper = MyTTSPrototyper(
-        path_to_databento_format_csv="path/to/csv",
+        path_to_csv="path/to/csv",
         filter_for_symbol="SYMBOL",
         max_bars=1000,
     )
@@ -234,6 +234,8 @@ class MyTTSPrototyper(ttsp.TTSPrototyper):
             self._market_data_df["close"].rolling(100).mean()
         )
 
+        return self._market_data_df
+
     def generate_signals(self) -> pd.DataFrame:
         # Long entry signal
         # First check for valid data (no NaN values)
@@ -273,7 +275,9 @@ class MyTTSPrototyper(ttsp.TTSPrototyper):
             "S08_exit"
         ] = 1
 
-    def apply_strategy_rules(self) -> pd.DataFrame:
+        return self._market_data_df
+
+    def apply_strategy_rules(self, row):
         pass
 
 
@@ -794,19 +798,22 @@ Trading time restrictions should be implemented at the signal or strategy level 
 ```python
 def generate_signals(self) -> pd.DataFrame:
     """Generate signals with trading hour restrictions."""
-    # Convert timestamp to time for hour filtering
-    self._market_data_df['hour'] = pd.to_datetime(
-        self._market_data_df['ts_event']
-    ).dt.hour
+    # Convert timestamp to datetime for time filtering
+    dt_series = pd.to_datetime(self._market_data_df['ts_event'])
+    self._market_data_df['hour'] = dt_series.dt.hour
+    self._market_data_df['minute'] = dt_series.dt.minute
 
     # Example: Only trade during regular hours (9:30 AM - 4:00 PM ET)
     regular_hours = (
-        (self._market_data_df['hour'] >= 9) &
-        (self._market_data_df['hour'] < 16)
+        ((self._market_data_df['hour'] == 9) & (self._market_data_df['minute'] >= 30)) |  # 9:30 AM onwards
+        ((self._market_data_df['hour'] > 9) & (self._market_data_df['hour'] < 16)) |      # 10 AM - 3:59 PM
+        ((self._market_data_df['hour'] == 16) & (self._market_data_df['minute'] == 0))    # Exactly 4:00 PM
     )
 
-    # Apply your signal logic
-    base_signal = your_signal_logic()
+    # Apply your signal logic (example: simple price above MA)
+    base_signal = (
+        self._market_data_df["close"] > self._market_data_df["I00_sma_20"]
+    )
 
     # Restrict signals to trading hours
     self._market_data_df["S00_long_entry"] = 0
@@ -820,9 +827,14 @@ def generate_signals(self) -> pd.DataFrame:
 For MNQ futures contracts, you might restrict to regular trading hours:
 ```python
 # MNQ regular trading hours (9:30 AM - 4:00 PM ET)
+dt_series = pd.to_datetime(self._market_data_df['ts_event'])
+hour = dt_series.dt.hour
+minute = dt_series.dt.minute
+
 regular_hours = (
-    (self._market_data_df['hour'] >= 9) &
-    (self._market_data_df['hour'] < 16)
+    ((hour == 9) & (minute >= 30)) |  # 9:30 AM onwards
+    ((hour > 9) & (hour < 16)) |      # 10 AM - 3:59 PM
+    ((hour == 16) & (minute == 0))    # Exactly 4:00 PM
 )
 ```
 

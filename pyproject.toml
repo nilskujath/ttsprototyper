@@ -1,6 +1,6 @@
 [project]
 name = "ttsprototyper"
-version = "0.2.0"
+version = "0.4.0"
 description = "Technical Trading Strategy Prototyper - Visual backtesting framework for developing and analyzing trading strategies with comprehensive charting and performance analysis"
 authors = [
     {name = "Nils P. Kujath",email = "63961429+NilsKujath@users.noreply.github.com"}
